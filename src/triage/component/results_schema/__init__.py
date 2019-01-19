@@ -20,8 +20,6 @@ from .schema import (
     Subset,
     TestEvaluation,
     TrainEvaluation,
-    TestSubsetEvaluation,
-    TrainSubsetEvaluation,
     TestPrediction,
     TrainPrediction,
 )

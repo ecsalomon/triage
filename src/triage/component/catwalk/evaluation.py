@@ -506,7 +506,6 @@ class ModelEvaluator(object):
             as_of_date_frequency,
             evaluations,
             evaluation_table_obj,
-            subset_hash,
         )
         logging.info(
             "Done writing metrics to db: %s table for subset %s",
@@ -529,7 +528,6 @@ class ModelEvaluator(object):
         as_of_date_frequency,
         evaluations,
         evaluation_table_obj,
-        subset_hash=None,
     ):
         """Write evaluation objects to the database
 
