@@ -179,6 +179,7 @@ class EvaluationFactory(factory.alchemy.SQLAlchemyModelFactory):
         sqlalchemy_session = session
 
     model_rel = factory.SubFactory(ModelFactory)
+    subset_hash = ''
     evaluation_start_time = factory.fuzzy.FuzzyNaiveDateTime(datetime(2008, 1, 1))
     evaluation_end_time = factory.fuzzy.FuzzyNaiveDateTime(datetime(2008, 1, 1))
     as_of_date_frequency = "3d"

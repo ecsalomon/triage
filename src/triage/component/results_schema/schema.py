@@ -259,6 +259,7 @@ class TestEvaluation(Base):
     model_id = Column(
         Integer, ForeignKey("model_metadata.models.model_id"), primary_key=True
     )
+    subset_hash = Column(String, primary_key=True, default='')
     evaluation_start_time = Column(DateTime, primary_key=True)
     evaluation_end_time = Column(DateTime, primary_key=True)
     as_of_date_frequency = Column(Interval, primary_key=True)
@@ -281,6 +282,7 @@ class TrainEvaluation(Base):
     model_id = Column(
         Integer, ForeignKey("model_metadata.models.model_id"), primary_key=True
     )
+    subset_hash = Column(String, primary_key=True, default='')
     evaluation_start_time = Column(DateTime, primary_key=True)
     evaluation_end_time = Column(DateTime, primary_key=True)
     as_of_date_frequency = Column(Interval, primary_key=True)
@@ -293,60 +295,4 @@ class TrainEvaluation(Base):
     sort_seed = Column(Integer)
 
     model_rel = relationship("Model")
-
-
-class TestSubsetEvaluation(Base):
-
-    __tablename__ = "subset_evaluations"
-    __table_args__ = {"schema": "test_results"}
-
-    model_id = Column(
-        Integer, ForeignKey("model_metadata.models.model_id"), primary_key=True
-    )
-    evaluation_start_time = Column(DateTime, primary_key=True)
-    evaluation_end_time = Column(DateTime, primary_key=True)
-    as_of_date_frequency = Column(Interval, primary_key=True)
-    subset_hash = Column(
-        String,
-        ForeignKey("model_metadata.subsets.subset_hash"),
-        primary_key=True
-    )
-    metric = Column(String, primary_key=True)
-    parameter = Column(String, primary_key=True)
-    value = Column(Numeric)
-    num_labeled_examples = Column(Integer)
-    num_labeled_above_threshold = Column(Integer)
-    num_positive_labels = Column(Integer)
-    sort_seed = Column(Integer)
-
-    model_rel = relationship("Model")
-    subset_rel = relationship("Subset")
-
-
-class TrainSubsetEvaluation(Base):
-
-    __tablename__ = "subset_evaluations"
-    __table_args__ = {"schema": "train_results"}
-
-    model_id = Column(
-        Integer, ForeignKey("model_metadata.models.model_id"), primary_key=True
-    )
-    evaluation_start_time = Column(DateTime, primary_key=True)
-    evaluation_end_time = Column(DateTime, primary_key=True)
-    as_of_date_frequency = Column(Interval, primary_key=True)
-    subset_hash = Column(
-        String,
-        ForeignKey("model_metadata.subsets.subset_hash"),
-        primary_key=True
-    )
-    metric = Column(String, primary_key=True)
-    parameter = Column(String, primary_key=True)
-    value = Column(Numeric)
-    num_labeled_examples = Column(Integer)
-    num_labeled_above_threshold = Column(Integer)
-    num_positive_labels = Column(Integer)
-    sort_seed = Column(Integer)
-
-    model_rel = relationship("Model")
-    subset_rel = relationship("Subset")
 

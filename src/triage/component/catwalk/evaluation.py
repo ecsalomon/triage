@@ -381,13 +381,14 @@ class ModelEvaluator(object):
             )
         return evaluations
 
-    def needs_evaluations(self, matrix_store, model_id):
+    def needs_evaluations(self, matrix_store, model_id, subset_hash=''):
         """Returns whether or not all the configured metrics are present in the
         database for the given matrix and model.
 
         Args:
             matrix_store (triage.component.catwalk.storage.MatrixStore)
             model_id (int) A model id
+            subset_hash (str) An identifier for the subset to be evaluated
 
         Returns:
             (bool) whether or not this matrix and model are missing any evaluations in the db
@@ -415,6 +416,7 @@ class ModelEvaluator(object):
             evaluation_start_time=matrix_store.as_of_dates[0],
             evaluation_end_time=matrix_store.as_of_dates[-1],
             as_of_date_frequency=matrix_store.metadata["as_of_date_frequency"],
+            subset_hash=subset_hash,
         ).distinct(eval_obj.metric, eval_obj.parameter).all()
 
         # The list of needed metrics and parameters are all the unique metric/params from the config
@@ -443,12 +445,11 @@ class ModelEvaluator(object):
             subset (dict) A dictionary containing a predictions query and a
                 name for the subset to evaluate on, if any
         """
+        evaluation_table_obj = matrix_store.matrix_type.evaluation_obj
+        
         # If we are evaluating on a subset, we want to get just the labels and
-        # predictions for the included entity-date pairs and write to the
-        # Test- or TrainSubsetEvaluations table, rather than the overall
-        # Test- or TrainEvaluations table.
-        if subset is not None:
-            evaluation_table_obj = matrix_store.matrix_type.subset_evaluation_obj
+        # predictions for the included entity-date pairs
+        if subset:
             labels, predictions_proba = self._subset_labels_and_predictions(
                     matrix_store,
                     predictions_proba,
@@ -457,9 +458,8 @@ class ModelEvaluator(object):
             )
             subset_hash = subset["hash"]
         else:
-            evaluation_table_obj = matrix_store.matrix_type.evaluation_obj
             labels = matrix_store.labels()
-            subset_hash = None
+            subset_hash = '' 
         
         matrix_type = matrix_store.matrix_type.string_name
         evaluation_start_time = matrix_store.as_of_dates[0]
@@ -500,6 +500,7 @@ class ModelEvaluator(object):
         )
         self._write_to_db(
             model_id,
+            subset_hash,
             evaluation_start_time,
             evaluation_end_time,
             as_of_date_frequency,
@@ -512,11 +513,17 @@ class ModelEvaluator(object):
             matrix_type,
             subset
         )
+        logging.info(
+            "Done writing metrics to db: %s table for subset %s",
+            matrix_type,
+            subset
+        )
 
     @db_retry
     def _write_to_db(
         self,
         model_id,
+        subset_hash,
         evaluation_start_time,
         evaluation_end_time,
         as_of_date_frequency,
@@ -547,23 +554,18 @@ class ModelEvaluator(object):
         """
         session = self.sessionmaker()
 
-        if subset_hash is None:
-            session.query(evaluation_table_obj).filter_by(
-                model_id=model_id,
-                evaluation_start_time=evaluation_start_time,
-                evaluation_end_time=evaluation_end_time,
-                as_of_date_frequency=as_of_date_frequency,
-            ).delete()
-        else:
-            session.query(evaluation_table_obj).filter_by(
-                model_id=model_id,
-                evaluation_start_time=evaluation_start_time,
-                evaluation_end_time=evaluation_end_time,
-                as_of_date_frequency=as_of_date_frequency,
-                subset_hash=subset_hash
-            ).delete()
+        session.query(evaluation_table_obj).filter_by(
+            model_id=model_id,
+            evaluation_start_time=evaluation_start_time,
+            evaluation_end_time=evaluation_end_time,
+            as_of_date_frequency=as_of_date_frequency,
+            subset_hash=subset_hash
+        ).delete()
+
         for evaluation in evaluations:
             evaluation.model_id = model_id
+            evaluation.as_of_date_frequency = as_of_date_frequency
+            evaluation.subset_hash = subset_hash
             evaluation.evaluation_start_time = evaluation_start_time
             evaluation.evaluation_end_time = evaluation_end_time
             evaluation.as_of_date_frequency = as_of_date_frequency

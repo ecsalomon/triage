@@ -8,7 +8,6 @@ from .factories import (
     ModelFactory,
     SubsetFactory,
     EvaluationFactory,
-    SubsetEvaluationFactory,
     TestPredictionFactory,
     TrainPredictionFactory,
     IndividualImportanceFactory,
@@ -17,7 +16,7 @@ from .factories import (
 )
 
 
-def test_evaluation_factories():
+def test_evaluation_factories_no_subset():
     with testing.postgresql.Postgresql() as postgresql:
         engine = create_engine(postgresql.url())
         Base.metadata.create_all(engine)
@@ -36,21 +35,23 @@ def test_evaluation_factories():
                 model_group_id,
                 m.model_id,
                 e.metric,
-                e.value
+                e.value,
+                e.subset_hash
             from
                 test_results.evaluations e
                 join model_metadata.models m using (model_id)
             """
         )
-        for model_group_id, model_id, metric, value in results:
+        for model_group_id, model_id, metric, value, subset_hash in results:
             # if the evaluations are created with the model group and model,
             # as opposed to an autoprovisioned one,
             # the ids in a fresh DB should be 1
             assert model_group_id == 1
             assert model_id == 1
+            assert not subset_hash
 
 
-def test_subset_evaluation_factories():
+def test_subset_evaluation_factories_with_subset():
     with testing.postgresql.Postgresql() as postgresql:
         engine = create_engine(postgresql.url())
         Base.metadata.create_all(engine)
@@ -74,7 +75,7 @@ def test_subset_evaluation_factories():
                 e.metric,
                 e.value
             from
-                test_results.subset_evaluations e
+                test_results.evaluations e
                 join model_metadata.models m using (model_id)
                 join model_metadata.subsets s using (subset_hash)
             """

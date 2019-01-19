@@ -144,7 +144,7 @@ def test_simple_experiment(experiment_class, matrix_storage_class):
                     row
                     for row in db_engine.execute(
                         """
-                        select * from {}_results.subset_evaluations e
+                        select * from {}_results.evaluations e
                         join model_metadata.models using (model_id)
                         join model_metadata.subsets using (subset_hash)
                         join {}_results.predictions p on (
