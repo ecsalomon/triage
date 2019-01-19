@@ -266,12 +266,15 @@ After the experiment run, a variety of schemas and tables will be created and po
 * model_metadata.experiment_models - A many-to-many table between experiments and models. This will have a row if the experiment used the model, regardless of whether or not it had to build it
 * model_metadata.model_groups - A model groups refers to all models that share parameters like classifier type, hyperparameters, etc, but *have different training windows*. Look at these to see how classifiers perform over different training windows.
 * model_metadata.matrices - Each matrix that was used for training and testing has metadata written about it such as the matrix hash, length, and time configuration.
+* model_metadata.subsets - Each evaluation subset that was used for model scoring has its configuation and a hash written here
 * train_results.feature_importances - The sklearn feature importances results for each trained model
 * train_results.predictions - Prediction probabilities for train matrix entities generated against trained models
 * train_results.evaluations - Metric scores of trained models on the training data.
+* train_results.subset_evaluations - Metric scores of trained models on subsets of the training predictions, linked to the model_metadata.subsets table by the subset_hash.
 * test_results.predictions - Prediction probabilities for test matrix entities generated against trained models
 * test_results.evaluations - Metric scores of trained models over given testing windows
 * test_results.individual_importances - Individual feature importance scores for test matrix entities.
+* test_results.subset_evaluations - Metric scores of trained models on subsets of the testing predictions, linked to the model_metadata.subsets table by the subset_hash.
 
 Here's an example query, which returns the top 10 model groups by precision at the top 100 entities:
 

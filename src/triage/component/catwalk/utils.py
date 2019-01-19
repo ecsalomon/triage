@@ -16,7 +16,8 @@ from triage.component.results_schema import (
     Matrix,
     Model,
     ExperimentMatrix,
-    ExperimentModel
+    ExperimentModel,
+    Subset,
 )
 
 
@@ -111,6 +112,16 @@ def missing_model_hashes(experiment_hash, db_engine):
     return [row[0] for row in db_engine.execute(query, experiment_hash)]
 
 
+@db_retry
+def save_subset_and_get_hash(subset_config, db_engine):
+    subset_hash = filename_friendly_hash(subset_config)
+    session = sessionmaker(bind=db_engine)()
+    session.merge(Subset(subset_hash=subset_hash, config=subset_config))
+    session.commit()
+    session.close()
+    return subset_hash
+
+
 class Batch:
     # modified from
     # http://codereview.stackexchange.com/questions/118883/split-up-an-iterable-into-batches
@@ -141,15 +152,19 @@ class Batch:
 
 
 def sort_predictions_and_labels(predictions_proba, labels, sort_seed):
-    random.seed(sort_seed)
-    predictions_proba_sorted, labels_sorted = zip(
-        *sorted(
-            zip(predictions_proba, labels),
-            key=lambda pair: (pair[0], random.random()),
-            reverse=True,
+    if len(labels) == 0:
+        logging.debug("No labels present, skipping sorting.")
+        return predictions_proba, labels
+    else:
+        random.seed(sort_seed)
+        predictions_proba_sorted, labels_sorted = zip(
+            *sorted(
+                zip(predictions_proba, labels),
+                key=lambda pair: (pair[0], random.random()),
+                reverse=True,
+            )
         )
-    )
-    return predictions_proba_sorted, labels_sorted
+        return predictions_proba_sorted, labels_sorted
 
 
 @db_retry

@@ -35,7 +35,8 @@ from triage.component.catwalk.utils import (
     associate_models_with_experiment,
     associate_matrices_with_experiment,
     missing_matrix_uuids,
-    missing_model_hashes
+    missing_model_hashes,
+    save_subset_and_get_hash,
 )
 from triage.component.catwalk.storage import (
     CSVMatrixStore,
@@ -547,6 +548,10 @@ class ExperimentBase(ABC):
                 "No grid_config was passed in the experiment config. No models will be trained"
             )
             return
+
+        if "subsets" in self.config["scoring"].keys():
+            for subset in self.config["scoring"]["subsets"]:
+                subset["hash"] = save_subset_and_get_hash(subset, self.db_engine)
 
         for split_num, split in enumerate(self.full_matrix_definitions):
             self.log_split(split_num, split)

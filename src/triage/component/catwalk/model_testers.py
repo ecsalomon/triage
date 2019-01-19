@@ -41,6 +41,11 @@ class ModelTester(object):
             training_metric_groups=evaluator_config.get("training_metric_groups", []),
         )
 
+        try:
+            self.subsets = evaluator_config["subsets"]
+        except:
+            self.subsets = None
+
     def generate_model_test_tasks(self, split, train_store, model_ids):
         test_tasks = []
         for test_matrix_def, test_uuid in zip(
@@ -51,8 +56,8 @@ class ModelTester(object):
             if test_store.empty:
                 logging.warning(
                     """Test matrix for uuid %s
-                was empty, no point in generating predictions. Not creating test task.
-                """,
+                    was empty, no point in generating predictions. Not creating test task.
+                    """,
                     test_uuid,
                 )
                 continue
@@ -118,6 +123,15 @@ class ModelTester(object):
                         matrix_store=store,
                         model_id=model_id,
                     )
+
+                    if self.subsets is not None:
+                        for subset in self.subsets:
+                            self.evaluator.evaluate(
+                                predictions_proba=predictions_proba,
+                                matrix_store=store,
+                                model_id=model_id,
+                                subset=subset
+                            )
                 else:
                     logging.info(
                         "No need to predict/evaluate for matrix %s-%s and model %s. Skipping",

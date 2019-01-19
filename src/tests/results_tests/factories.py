@@ -90,6 +90,16 @@ class ModelFactory(BaseModelFactory):
     experiment_association = factory.RelatedFactory(ExperimentModelFactory, 'model_rel')
 
 
+class SubsetFactory(factory.alchemy.SQLAlchemyModelFactory):
+    class Meta:
+        model = schema.Subset
+        sqlalchemy_session = session
+
+    subset_hash = factory.fuzzy.FuzzyText()
+    config = {}
+    created_timestamp = factory.fuzzy.FuzzyNaiveDateTime(datetime(2008, 1, 1))
+
+
 class FeatureImportanceFactory(factory.alchemy.SQLAlchemyModelFactory):
     class Meta:
         model = schema.FeatureImportance
@@ -102,9 +112,25 @@ class FeatureImportanceFactory(factory.alchemy.SQLAlchemyModelFactory):
     rank_pct = 1.0
 
 
-class PredictionFactory(factory.alchemy.SQLAlchemyModelFactory):
+class TestPredictionFactory(factory.alchemy.SQLAlchemyModelFactory):
     class Meta:
         model = schema.TestPrediction
+        sqlalchemy_session = session
+
+    model_rel = factory.SubFactory(ModelFactory)
+    entity_id = factory.fuzzy.FuzzyInteger(0)
+    as_of_date = factory.fuzzy.FuzzyNaiveDateTime(datetime(2008, 1, 1))
+    score = factory.fuzzy.FuzzyDecimal(0, 1)
+    label_value = factory.fuzzy.FuzzyInteger(0, 1)
+    rank_abs = 1
+    rank_pct = 1.0
+    matrix_uuid = factory.SelfAttribute("model_rel.train_matrix_uuid")
+    test_label_timespan = "3m"
+
+
+class TrainPredictionFactory(factory.alchemy.SQLAlchemyModelFactory):
+    class Meta:
+        model = schema.TrainPrediction
         sqlalchemy_session = session
 
     model_rel = factory.SubFactory(ModelFactory)
@@ -153,6 +179,26 @@ class EvaluationFactory(factory.alchemy.SQLAlchemyModelFactory):
         sqlalchemy_session = session
 
     model_rel = factory.SubFactory(ModelFactory)
+    subset_hash = ''
+    evaluation_start_time = factory.fuzzy.FuzzyNaiveDateTime(datetime(2008, 1, 1))
+    evaluation_end_time = factory.fuzzy.FuzzyNaiveDateTime(datetime(2008, 1, 1))
+    as_of_date_frequency = "3d"
+    metric = "precision@"
+    parameter = "100_abs"
+    value = factory.fuzzy.FuzzyDecimal(0, 1)
+    num_labeled_examples = 10
+    num_labeled_above_threshold = 8
+    num_positive_labels = 5
+    sort_seed = 8
+
+
+class SubsetEvaluationFactory(factory.alchemy.SQLAlchemyModelFactory):
+    class Meta:
+        model = schema.TestEvaluation
+        sqlalchemy_session = session
+
+    model_rel = factory.SubFactory(ModelFactory)
+    subset_rel = factory.SubFactory(SubsetFactory)
     evaluation_start_time = factory.fuzzy.FuzzyNaiveDateTime(datetime(2008, 1, 1))
     evaluation_end_time = factory.fuzzy.FuzzyNaiveDateTime(datetime(2008, 1, 1))
     as_of_date_frequency = "3d"

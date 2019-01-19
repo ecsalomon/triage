@@ -1,8 +1,11 @@
 import functools
+import io
 import logging
 import time
+import warnings
 
 import numpy
+import pandas
 from sqlalchemy.orm import sessionmaker
 
 from . import metrics
@@ -88,6 +91,8 @@ class ModelEvaluator(object):
             training_metric_groups (list) metrics to be calculated on training set,
                 in the same form as testing_metric_groups
             db_engine (sqlalchemy.engine)
+            sort_seed (int) the seed to set in random.set_seed() to break ties
+                when sorting predictions
             custom_metrics (dict) Functions to generate metrics
                 not available by default
                 Each function is expected take in the following params:
@@ -105,6 +110,70 @@ class ModelEvaluator(object):
     @property
     def sessionmaker(self):
         return sessionmaker(bind=self.db_engine)
+
+    def _subset_labels_and_predictions(
+        self,
+        matrix_store,
+        predictions_proba,
+        subset_query,
+        model_id,
+    ):
+        """Runs the subset query and returns only the predictions and labels
+        relevant for the subset.
+
+        Args:
+            matrix_store (catwalk.storage.MatrixStore) a wrapper for the
+                prediction matrix and metadata
+            predictions_proba (list) Probability predictions
+            subset_query (str) A query against the predictions table that
+                produces two columns, entity_id and as_of_date, with
+                placeholders for the results_schema name, the list of
+                as_of_dates in the matrix, and the model_id
+            model_id (int) the id of the model being evaluated
+
+        Returns: the labels (pandas.Series) and predictions (numpy.array) 
+        """
+        logging.info("Subsetting labels and predictions")
+        labels = matrix_store.labels()
+        logging.info(labels)
+        indexed_predictions = pandas.Series(predictions_proba, index=labels.index)
+        
+        index_subset = self._query_to_pandas_index(
+            subset_query.format(
+                model_id=model_id,
+                as_of_dates=[d.strftime("%Y-%m-%d %H:%M:%S.%f") for d in matrix_store.as_of_dates],
+                results_schema=matrix_store.matrix_type.prediction_obj.__table_args__["schema"],
+            ),
+            index_columns=["entity_id", "as_of_date"],
+        )
+
+        labels_subset = labels.loc[index_subset]
+        predictions_subset = indexed_predictions.loc[index_subset].values
+
+        logging.debug(f"len(labels_subset) entities in subset out of len(labels) in matrix.")
+
+        return (labels_subset, predictions_subset)
+    
+    def _query_to_pandas_index(self, query_string, index_columns):
+        """Given a query, create a pandas.Index or MultiIndex object containing
+        the given columns.
+
+        Args:
+            query_string (str) query to send
+            index_columns (list) list of columns to create the index from
+
+        Returns: (pandas.Index or pandas.MultiIndex) the requested index
+        """
+        copy_sql = f"COPY ({query_string}) TO STDOUT WITH CSV HEADER"
+        conn = self.db_engine.raw_connection()
+        cur = conn.cursor()
+        out = io.StringIO()
+        logging.debug(f"Running query {copy_sql} to get subset")
+        cur.copy_expert(copy_sql, out)
+        out.seek(0)
+        df = pandas.read_csv(out, parse_dates=["as_of_date"], index_col=index_columns)
+        
+        return df.index
 
     def _validate_metrics(self, custom_metrics):
         for name, met in custom_metrics.items():
@@ -184,8 +253,9 @@ class ModelEvaluator(object):
             threshold_value (int) the numeric threshold,
             threshold_specified_by_user (bool) Whether or not there was any threshold
                 specified by the user. Defaults to True
-            evaluation_table_obj (schema.TestEvaluation or TrainEvaluation)
-                specifies to which table to add the evaluations
+            evaluation_table_obj (schema.TestEvaluation, TrainEvaluation,
+                TestSubsetEvaluation, or TrainSubsetEvaluation) specifies to
+                which table to add the evaluations
 
         Returns: (list) results_schema.TrainEvaluation or TestEvaluation objects
         Raises: UnknownMetricError if a given metric is not present in
@@ -209,12 +279,20 @@ class ModelEvaluator(object):
                 raise metrics.UnknownMetricError()
 
             for parameter_combination in parameters:
-                value = self.available_metrics[metric](
-                    predictions_proba,
-                    predicted_classes_with_labels,
-                    present_labels,
-                    parameter_combination,
-                )
+                try:
+                    value = self.available_metrics[metric](
+                        predictions_proba,
+                        predicted_classes_with_labels,
+                        present_labels,
+                        parameter_combination,
+                    )
+                except:
+                    warnings.warn(
+                        f"{metric} not defined for parameter "
+                        "{parameter_combination}. Inserting NULL for value.",
+                        RuntimeWarning
+                    )
+                    value = None
 
                 # convert the thresholds/parameters into something
                 # more readable
@@ -250,7 +328,11 @@ class ModelEvaluator(object):
         return evaluations
 
     def _evaluations_for_group(
-        self, group, predictions_proba_sorted, labels_sorted, evaluation_table_obj
+        self,
+        group,
+        predictions_proba_sorted,
+        labels_sorted,
+        evaluation_table_obj,
     ):
         """Generate evaluations for a given metric group, and create ORM objects to hold them
 
@@ -259,7 +341,10 @@ class ModelEvaluator(object):
                 Should contain the key 'metrics', and optionally 'parameters' or 'thresholds'
             predictions_proba (list) Probability predictions
             labels (list) True labels (may have NaNs)
-
+            evaluation_table_obj (schema.TestEvaluation, TrainEvaluation,
+                TestSubsetEvaluation, or TrainSubsetEvaluation) specifies to
+                which table to add the evaluations
+        
         Returns: (list) results_schema.Evaluation objects
         """
         logging.info("Creating evaluations for metric group %s", group)
@@ -296,13 +381,14 @@ class ModelEvaluator(object):
             )
         return evaluations
 
-    def needs_evaluations(self, matrix_store, model_id):
+    def needs_evaluations(self, matrix_store, model_id, subset_hash=''):
         """Returns whether or not all the configured metrics are present in the
         database for the given matrix and model.
 
         Args:
             matrix_store (triage.component.catwalk.storage.MatrixStore)
             model_id (int) A model id
+            subset_hash (str) An identifier for the subset to be evaluated
 
         Returns:
             (bool) whether or not this matrix and model are missing any evaluations in the db
@@ -330,6 +416,7 @@ class ModelEvaluator(object):
             evaluation_start_time=matrix_store.as_of_dates[0],
             evaluation_end_time=matrix_store.as_of_dates[-1],
             as_of_date_frequency=matrix_store.metadata["as_of_date_frequency"],
+            subset_hash=subset_hash,
         ).distinct(eval_obj.metric, eval_obj.parameter).all()
 
         # The list of needed metrics and parameters are all the unique metric/params from the config
@@ -341,7 +428,13 @@ class ModelEvaluator(object):
         session.close()
         return needed
 
-    def evaluate(self, predictions_proba, matrix_store, model_id):
+    def evaluate(
+        self,
+        predictions_proba,
+        matrix_store,
+        model_id,
+        subset=None,
+    ):
         """Evaluate a model based on predictions, and save the results
 
         Args:
@@ -349,28 +442,43 @@ class ModelEvaluator(object):
             matrix_store (catwalk.storage.MatrixStore) a wrapper for the
                 prediction matrix and metadata
             model_id (int) The database identifier of the model
+            subset (dict) A dictionary containing a predictions query and a
+                name for the subset to evaluate on, if any
         """
-        labels = matrix_store.labels()
+        evaluation_table_obj = matrix_store.matrix_type.evaluation_obj
+        
+        # If we are evaluating on a subset, we want to get just the labels and
+        # predictions for the included entity-date pairs
+        if subset:
+            labels, predictions_proba = self._subset_labels_and_predictions(
+                    matrix_store,
+                    predictions_proba,
+                    subset["query"],
+                    model_id,
+            )
+            subset_hash = subset["hash"]
+        else:
+            labels = matrix_store.labels()
+            subset_hash = '' 
+        
         matrix_type = matrix_store.matrix_type.string_name
         evaluation_start_time = matrix_store.as_of_dates[0]
         evaluation_end_time = matrix_store.as_of_dates[-1]
         as_of_date_frequency = matrix_store.metadata["as_of_date_frequency"]
 
-        # Specifies which evaluation table to write to: TestEvaluation or TrainEvaluation
-        evaluation_table_obj = matrix_store.matrix_type.evaluation_obj
-
         logging.info(
             "Generating evaluations for model id %s, evaluation range %s-%s, "
-            "as_of_date frequency %s",
+            "as_of_date frequency %s, subset %s",
             model_id,
             evaluation_start_time,
             evaluation_end_time,
             as_of_date_frequency,
+            subset
         )
+
         predictions_proba_sorted, labels_sorted = sort_predictions_and_labels(
             predictions_proba, labels, self.sort_seed
         )
-
         evaluations = []
         matrix_type = matrix_store.matrix_type
         if matrix_type.is_test:
@@ -382,29 +490,46 @@ class ModelEvaluator(object):
                 group,
                 predictions_proba_sorted,
                 labels_sorted,
-                matrix_type.evaluation_obj,
+                evaluation_table_obj
             )
 
-        logging.info("Writing metrics to db: %s table", matrix_type)
+        logging.info(
+            "Writing metrics to db: %s table for subset %s",
+            matrix_type,
+            subset
+        )
         self._write_to_db(
             model_id,
+            subset_hash,
             evaluation_start_time,
             evaluation_end_time,
             as_of_date_frequency,
             evaluations,
             evaluation_table_obj,
+            subset_hash,
         )
-        logging.info("Done writing metrics to db: %s table", matrix_type)
+        logging.info(
+            "Done writing metrics to db: %s table for subset %s",
+            matrix_type,
+            subset
+        )
+        logging.info(
+            "Done writing metrics to db: %s table for subset %s",
+            matrix_type,
+            subset
+        )
 
     @db_retry
     def _write_to_db(
         self,
         model_id,
+        subset_hash,
         evaluation_start_time,
         evaluation_end_time,
         as_of_date_frequency,
         evaluations,
         evaluation_table_obj,
+        subset_hash=None,
     ):
         """Write evaluation objects to the database
 
@@ -413,10 +538,19 @@ class ModelEvaluator(object):
 
         Args:
             model_id (int) primary key of the model
-            as_of_date (datetime.date) Date the predictions were made as of
-            evaluations (list) results_schema.TestEvaluation or TrainEvaluation objects
-            evaluation_table_obj (schema.TestEvaluation or TrainEvaluation)
-                specifies to which table to add the evaluations
+            evaluation_start_time (pandas._libs.tslibs.timestamps.Timestamp)
+                first as_of_date included in the evaluation period
+            evaluation_end_time (pandas._libs.tslibs.timestamps.Timestamp) last
+                as_of_date included in the evaluation period
+            as_of_date_frequency (str) the frequency with which as_of_dates
+                occur between the evaluation_start_time and evaluation_end_time
+            evaluations (list) results_schema.TestEvaluation, TrainEvaluation,
+                TestSubsetEvaluation, or TrainSubsetEvaluation objects
+            evaluation_table_obj (schema.TestEvaluation, TrainEvaluation,
+                TestSubsetEvaluation, or TrainSubsetEvaluation) specifies to
+                which table to add the evaluations
+            subset_hash (str) the hash of the subset, if any, that the
+                evaluation is made on
         """
         session = self.sessionmaker()
 
@@ -425,13 +559,18 @@ class ModelEvaluator(object):
             evaluation_start_time=evaluation_start_time,
             evaluation_end_time=evaluation_end_time,
             as_of_date_frequency=as_of_date_frequency,
+            subset_hash=subset_hash
         ).delete()
 
         for evaluation in evaluations:
             evaluation.model_id = model_id
+            evaluation.as_of_date_frequency = as_of_date_frequency
+            evaluation.subset_hash = subset_hash
             evaluation.evaluation_start_time = evaluation_start_time
             evaluation.evaluation_end_time = evaluation_end_time
             evaluation.as_of_date_frequency = as_of_date_frequency
+            if subset_hash is not None:
+                evaluation.subset_hash = subset_hash
             session.add(evaluation)
         session.commit()
         session.close()

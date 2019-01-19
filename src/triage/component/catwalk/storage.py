@@ -8,7 +8,9 @@ from sklearn.externals import joblib
 from urllib.parse import urlparse
 from triage.component.results_schema import (
     TestEvaluation,
+    TestSubsetEvaluation,
     TrainEvaluation,
+    TrainSubsetEvaluation,
     TestPrediction,
     TrainPrediction,
 )
@@ -556,6 +558,7 @@ class CSVMatrixStore(MatrixStore):
 class TestMatrixType(object):
     string_name = "test"
     evaluation_obj = TestEvaluation
+    subset_evaluation_obj = TestSubsetEvaluation
     prediction_obj = TestPrediction
     is_test = True
 
@@ -563,5 +566,6 @@ class TestMatrixType(object):
 class TrainMatrixType(object):
     string_name = "train"
     evaluation_obj = TrainEvaluation
+    subset_evaluation_obj = TrainSubsetEvaluation
     prediction_obj = TrainPrediction
     is_test = False

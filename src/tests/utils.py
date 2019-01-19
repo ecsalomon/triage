@@ -60,6 +60,7 @@ class MockMatrixStore(MatrixStore):
         init_labels=None,
         metadata_overrides=None,
         matrix=None,
+        init_as_of_dates=None,
     ):
         base_metadata = {
             "feature_start_time": datetime.date(2014, 1, 1),
@@ -70,6 +71,7 @@ class MockMatrixStore(MatrixStore):
             "label_timespan": "3month",
             "indices": ["entity_id"],
             "matrix_type": matrix_type,
+            "as_of_times": [datetime.date(2014, 10, 1), datetime.date(2014, 7, 1)],
         }
         metadata_overrides = metadata_overrides or {}
         base_metadata.update(metadata_overrides)
@@ -89,12 +91,23 @@ class MockMatrixStore(MatrixStore):
         self.label_count = label_count
         self.init_labels = init_labels
         self.matrix_uuid = matrix_uuid
+        if init_as_of_dates is None:
+            init_as_of_dates = []
+        self.init_as_of_dates = init_as_of_dates
 
         session = sessionmaker(db_engine)()
         session.add(Matrix(matrix_uuid=matrix_uuid))
+    
+    @property
+    def as_of_dates(self):
+        """The list of as-of-dates in the matrix"""
+        if len(self.init_as_of_dates) == 0:
+            return self.metadata["as_of_times"] 
+        else:
+            return self.init_as_of_dates
 
     def labels(self):
-        if self.init_labels == []:
+        if len(self.init_labels) == 0:
             return fake_labels(self.label_count)
         else:
             return self.init_labels
@@ -340,6 +353,18 @@ def sample_config():
         "training_metric_groups": [
             {"metrics": ["precision@"], "thresholds": {"top_n": [3]}}
         ],
+        "subsets": [
+            {
+                "name": "evens",
+                "query": """\
+                    select entity_id, as_of_date
+                    from {results_schema}.predictions
+                    where entity_id % 2 = 0
+                    and as_of_date in (SELECT(UNNEST(ARRAY{as_of_dates}::timestamp[])))
+                    and model_id = '{model_id}'
+                """,
+            },
+        ]
     }
 
     grid_config = {

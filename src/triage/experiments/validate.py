@@ -761,6 +761,53 @@ class ScoringConfigValidator(Validator):
                             )
                         )
 
+            if "subsets" in scoring_config:
+                for subset in scoring_config["subsets"]:
+                    if "query" not in subset:
+                        raise ValueError(
+                            dedent(
+                                f"""Section: subsets -
+                                The subset {subset} does not have a query. To
+                                run evaluations on a subset, you must include a
+                                query against the predictions table that
+                                returns entity_id, as_of_date pairs and has
+                                placeholders for the results_schema,
+                                as_of_dates, and model_id
+                                """
+                            )
+                        )
+                    for placeholder in ["{results_schema}", "{as_of_dates}", "{model_id}"]:
+                        if placeholder not in subset["query"]:
+                            raise ValueError(
+                                dedent(
+                                    f"""Section: subsets -
+                                    The subset query {subset["query"]} must
+                                    include a placeholder for the {placeholder}
+                                    """
+                                )
+                            )
+                    if "entity_id, as_of_date" not in subset["query"]:
+                        raise ValueError(
+                            dedent(
+                                f"""The subset qeury {subset["query"]} must
+                                return entity_id, as_of_date pairs
+                                """
+                            )
+                        )
+                    if "predictions" not in subset["query"]:
+                        raise ValueError(
+                            dedent(
+                                f"""The subset qeury {subset["query"]} should
+                                query the predictions table to ensure that the
+                                entity_id, as_of_date pairs returned exist in
+                                the predictions. If your query returns pairs
+                                that do not exist in the matrix being
+                                evaluated, you may experience an error or
+                                unexpected performance
+                                """
+                            )
+                        )
+
 
 class ExperimentValidator(Validator):
     def run(self, experiment_config):
