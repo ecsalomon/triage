@@ -35,7 +35,7 @@ def upgrade():
         schema="test_results",
     )
     op.add_column("evaluations", sa.Column("subset_hash", sa.String(), nullable=False, server_default=""), schema="train_results")
-    op.drop_constraint("train_evaluations_pkey", "evaluations", schema="train_results")
+    op.drop_constraint("evaluations_pkey", "evaluations", schema="train_results")
     op.create_primary_key(
         name="train_evaluations_pkey",
         table_name="evaluations",
