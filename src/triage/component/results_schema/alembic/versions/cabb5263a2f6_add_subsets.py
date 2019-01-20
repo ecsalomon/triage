@@ -26,7 +26,7 @@ def upgrade():
         sa.PrimaryKeyConstraint("subset_hash"),
         schema="model_metadata",
     )
-    op.add_column("evaluations", sa.Column("subset_hash", sa.String(), nullable=False), schema="test_results")
+    op.add_column("evaluations", sa.Column("subset_hash", sa.String(), nullable=False, server_default=""), schema="test_results")
     op.drop_constraint("evaluations_pkey", "evaluations", schema="test_results")
     op.create_primary_key(
         name="evaluations_pkey",
@@ -34,7 +34,7 @@ def upgrade():
         columns=["model_id", "subset_hash", "evaluation_start_time", "evaluation_end_time", "as_of_date_frequency", "metric", "parameter"],
         schema="test_results",
     )
-    op.add_column("evaluations", sa.Column("subset_hash", sa.String(), nullable=False), schema="train_results")
+    op.add_column("evaluations", sa.Column("subset_hash", sa.String(), nullable=False, server_default=""), schema="train_results")
     op.drop_constraint("train_evaluations_pkey", "evaluations", schema="train_results")
     op.create_primary_key(
         name="train_evaluations_pkey",
