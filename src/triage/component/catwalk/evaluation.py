@@ -570,5 +570,5 @@ class ModelEvaluator(object):
             if subset_hash is not None:
                 evaluation.subset_hash = subset_hash
             session.add(evaluation)
-        session.commit()
+            session.commit()
         session.close()
